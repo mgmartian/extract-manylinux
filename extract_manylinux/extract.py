@@ -101,14 +101,18 @@ class Extractor:
         object.__setattr__(self, 'version', version)
 
         # Set libraries search path.
-        paths = []
+        paths = [
+            # manylinux images build/install a recent version of libsqlite3.so in /usr/local/lib to
+            # override the often outdated version provided by the OS in /lib*; thus we should
+            # prefer /usr/local/lib over /lib.  See: https://github.com/pypa/manylinux/pull/93
+            self.prefix / 'usr/local/lib',
+        ]
         if self.arch in (Arch.AARCH64, Arch.X86_64):
             paths.append(self.prefix / 'lib64')
         elif self.arch == Arch.I686:
             paths.append(self.prefix / 'lib')
         else:
             raise NotImplementedError()
-        paths.append(self.prefix / 'usr/local/lib')
 
         ssl = glob.glob(str(self.prefix / 'opt/_internal/openssl-*'))
         if ssl:

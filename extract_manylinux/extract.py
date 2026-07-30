@@ -73,7 +73,7 @@ class Extractor:
     impl: PythonImpl = field(init=False)
     '''Python implementation'''
 
-    library_path: List[str] = field(init=False)
+    library_path: list[Path] = field(init=False)
     '''Search paths for libraries (LD_LIBRARY_PATH)'''
 
     python_prefix: Path = field(init=False)
@@ -102,9 +102,6 @@ class Extractor:
 
         # Set libraries search path.
         paths = [
-            # manylinux images build/install a recent version of libsqlite3.so in /usr/local/lib to
-            # override the often outdated version provided by the OS in /lib*; thus we should
-            # prefer /usr/local/lib over /lib.  See: https://github.com/pypa/manylinux/pull/93
             self.prefix / 'usr/local/lib',
         ]
         if self.arch in (Arch.AARCH64, Arch.X86_64):
@@ -114,9 +111,13 @@ class Extractor:
         else:
             raise NotImplementedError()
 
-        ssl = glob.glob(str(self.prefix / 'opt/_internal/openssl-*'))
-        if ssl:
-            paths.append(Path(ssl[0]) / 'lib')
+        # Various 3rd party libraries that Python was built against
+        for pkg_name in ('openssl-*', 'zstd-*', 'sqlite3', 'mpdecimal-*'):
+            pkg_glob = str(self.prefix.joinpath( f'opt/_internal/{pkg_name}'))
+            pkg_dirs = glob.glob(pkg_glob)
+            if len(pkg_dirs) != 1:
+                raise AssertionError(f"{len(pkg_dirs)} directories match '{pkg_glob}'; expected exactly 1.")
+            paths.append(Path(pkg_dirs[0],  'lib'))
 
         object.__setattr__(self, 'library_path', paths)
 
@@ -183,6 +184,13 @@ class Extractor:
             # shutil (i.e. doing so recusively, for directories).
             shutil.copytree(self.python_prefix / folder, destination / folder,
                             symlinks=True, dirs_exist_ok=True)
+
+        # Copy tcl packages so that tkinter works
+        for tcl_pkg in ('itcl4.3.7', 'tcl8.6', 'tk8.6'):
+            tcl_pkg_full_path = self.prefix.joinpath(f'usr/local/lib/{tcl_pkg}')
+            if not tcl_pkg_full_path.exists():
+                raise AssertionError(f"{tcl_pkg_full_path} not found.  Maybe the package has been upgraded?")
+            shutil.copytree(tcl_pkg_full_path, destination.joinpath(f'lib/{tcl_pkg_full_path.name}'))
 
         # Map binary dependencies.
         libs = self.ldd(self.python_prefix / f'bin/{python}')

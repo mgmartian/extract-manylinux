@@ -113,11 +113,17 @@ class Extractor:
 
         # Various 3rd party libraries that Python was built against
         for pkg_name in ('openssl-*', 'zstd-*', 'sqlite3', 'mpdecimal-*'):
-            pkg_glob = str(self.prefix.joinpath( f'opt/_internal/{pkg_name}'))
+            pkg_glob = str(self.prefix.joinpath(f'opt/_internal/{pkg_name}'))
             pkg_dirs = glob.glob(pkg_glob)
-            if len(pkg_dirs) != 1:
-                raise AssertionError(f"{len(pkg_dirs)} directories match '{pkg_glob}'; expected exactly 1.")
-            paths.append(Path(pkg_dirs[0],  'lib'))
+            if len(pkg_dirs) == 1:
+                paths.append(Path(pkg_dirs[0],  'lib'))
+                continue
+
+            if len(pkg_dirs) == 0 and pkg_name == 'openssl-*':
+                # openssl-* is there for manylinux2014_x86_64 but not 2_28_aarch64
+                continue
+
+            raise AssertionError(f"{len(pkg_dirs)} directories match '{pkg_glob}'; expected exactly 1.")
 
         object.__setattr__(self, 'library_path', paths)
 
@@ -186,10 +192,14 @@ class Extractor:
                             symlinks=True, dirs_exist_ok=True)
 
         # Copy tcl packages so that tkinter works
-        for tcl_pkg in ('itcl4.3.7', 'tcl8.6', 'tk8.6'):
-            tcl_pkg_full_path = self.prefix.joinpath(f'usr/local/lib/{tcl_pkg}')
-            if not tcl_pkg_full_path.exists():
-                raise AssertionError(f"{tcl_pkg_full_path} not found.  Maybe the package has been upgraded?")
+        tcl_pkg_basedirs = ('usr/local/lib', 'usr/share')
+        for tcl_pkg in ('tcl8.6', 'tk8.6'):
+            for base_dir in tcl_pkg_basedirs:
+                tcl_pkg_full_path = self.prefix.joinpath(f'{base_dir}/{tcl_pkg}')
+                if tcl_pkg_full_path.exists():
+                    break
+            else:
+                raise AssertionError(f"{tcl_pkg} not found in {tcl_pkg_basedirs}.")
             shutil.copytree(tcl_pkg_full_path, destination.joinpath(f'lib/{tcl_pkg_full_path.name}'))
 
         # Map binary dependencies.
